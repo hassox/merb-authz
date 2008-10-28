@@ -1,18 +1,25 @@
-# make sure we're running inside Merb
-if defined?(Merb::Plugins)
+require 'merb-core'
+require 'merb-auth-core'
 
-  # Merb gives you a Merb::Plugins.config hash...feel free to put your stuff in your piece of it
-  Merb::Plugins.config[:merb_authz] = {
-    :chickens => false
-  }
-  
-  Merb::BootLoader.before_app_loads do
-    # require code that must be loaded before the application
-  end
-  
-  Merb::BootLoader.after_app_loads do
-    # code that can be required after the application loads
-  end
-  
-  Merb::Plugins.add_rakefiles "merb-authz/merbtasks"
+path = File.expand_path(File.dirname(__FILE__)) / "merb-authz"
+require path / "authorization"
+require path / "authorizable_mixin"
+require path / "policy"
+
+
+
+
+Merb::BootLoader.before_app_loads do
+  # require code that must be loaded before the application
+end
+
+Merb::BootLoader.after_app_loads do
+  # code that can be required after the application loads
+end
+
+Merb::Plugins.add_rakefiles "merb-authz/merbtasks"
+
+
+Object.class_eval do
+  extend Merb::Authorization::Trigger
 end

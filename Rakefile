@@ -3,13 +3,14 @@ require 'rake/gempackagetask'
 
 require 'merb-core'
 require 'merb-core/tasks/merb'
+require "spec/rake/spectask"
 
 GEM_NAME = "merb-authz"
 GEM_VERSION = "0.0.1"
-AUTHOR = "Your Name"
-EMAIL = "Your Email"
+AUTHOR = "Daniel Neighman"
+EMAIL = "has.sox@gmail.com"
 HOMEPAGE = "http://merbivore.com/"
-SUMMARY = "Merb plugin that provides ..."
+SUMMARY = "Policy based Authorization Plugin for use with merb-auth"
 
 spec = Gem::Specification.new do |s|
   s.rubyforge_project = 'merb'
@@ -48,4 +49,13 @@ task :gemspec do
   File.open("#{GEM_NAME}.gemspec", "w") do |file|
     file.puts spec.to_ruby
   end
+end
+
+desc "Run all specs"
+Spec::Rake::SpecTask.new("spec") do |t|
+  t.spec_opts = ["--format", "specdoc", "--colour"]
+  t.spec_files = Dir["spec/**/*_spec.rb"].sort
+  t.rcov = false
+  t.rcov_opts << '--sort' << 'coverage' << '--sort-reverse'
+  t.rcov_opts << '--only-uncovered'
 end
