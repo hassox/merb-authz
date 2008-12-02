@@ -1,0 +1,377 @@
+h1. MerbAuth - Authorization
+
+Authorization in MerbAuth is a high level api for authorization in Merb applications.  It 
+does not implement any particular authorization scheme, but rather provides a mechanism
+for you to specify your own authorization logic and apply it in a very granular fashion.
+
+Authorization is different to authentication in that authentication asks who a user is,
+makes sure they're valid on the system.  Authorization on the other hand asks the question
+"can the user do this".
+
+When using MerbAuth, the api inside an app can remain the same while what it means to be authorized can
+completely change underneath.  This approach provides many benefits.  Apps can share
+the same api with wildly different meanings underneath where the application developer does
+not have to know intricately how the authorization is implemented.
+
+*Note: I'll just show usage throughout the readme with policies that are assumed to exist except where showing policy implementation*
+
+h2. Autorizable Objects (Operators)
+
+Any kind of object can be made authorizable, meaning that it can be asked "Can this _operator_ do this?"
+Typically, an authorizable object is a User, but it could also be a Group, Application, Machine or
+anything that makes sense to ask is this _operator_ authorized to...
+
+You make an object authorizable by using the _authorizable!_ method.
+
+<pre><code>
+  User.authorizable!
+  Group.authorizable!
+</code></pre>
+
+This will add the behavior required for this object to be asked if they are authorized.
+
+h2. Checking Authorization
+
+Once you've declared a class as _authorizable!_, you can ask instances of that class if they're _authorized?_
+
+<pre><code>
+  @user.authorized?(:admin)
+  @user.authorized?(:publisher)
+  @user.authorized?(:read, :target => @article)
+</code></pre>
+
+There are two types of authorization available.  
+
+# General authorization, where the question is asked of the _operator_ object alone.  For example, this could be asking if the
+  user is an administrator.  For example, for the following api call:
+  <pre><code>
+    @user.authorized?(:admin)
+  </code></pre>  
+     the underlying logic could look like this:
+  <pre><code>
+    @user.has_role?('admin')
+    # or
+    @user.admin?
+    # or even 
+    @user.login == "Me!"
+  </code></pre>
+  The logic is focused purely on the _operator_ object.  This kind of authorization doesn't focus on any particular object, it's just a general question about the operator.<br/><br/>
+# Instance authorization.  This is where you're asking an instance if an operator has some relationship.  For example for this api call:
+  <pre><code>
+    @user.authorized?(:publish, :target => @article)
+  </code></pre>
+    The underlying logic could look like:
+  <pre><code>
+    @user.can_publish?(@article)
+    # or
+    @user.has_role?(:publisher) && @article.publishable?
+    # or even just
+    @article.owner == @user
+  </code></pre>
+  With instance level authorization, you're wanting to find out if an _operator_ is authorized with respect to some target object.
+
+The way you differentiate between the two types in the api is by supplying the @:target@ option to the @authorized?@ method.
+
+h2. How Authorization is Implemented
+
+Authorization is implemented in MerbAuth by using _Policies_.  A policy is a class that contains the logic for a given
+authorization scheme.  You group these policies by using a policy group label either in a global scope, or scoped to a 
+particular class.  For example, you may add the "Admin", and "Publisher" policies to the global :publisher label.  Then when you
+ask @user.authorized?(:publisher)@ it will try each one until either one passes, or all fail.
+
+h3. Policy Group Labels
+
+A policy group label is a symbol that is used to identify a particular group of policies.  There can be one, or many policies for a 
+given group.  You can apply policy group labels in a global scope, scoped to a class, copied from a class and even inherited.  
+You can define policy groups on any object that inherits from Object.  This allows you to have fine control over the policy groups
+used when checking authentication.
+
+h3. Global Policy Labels
+
+Mapping a policy group label to a group of policies in the global scope is simple.
+<pre><code>
+  Merb::Authorization.global_policies do
+    for_label( :admin    ).use_policies("Admin")
+    for_labels(:publisher).use_policies("Publisher", :admin)
+  end
+</pre></code>
+
+Once you've done that you're in business.  This sets up global policies that you can use anywhere in your application when using
+general or instance authorization checks.
+
+Notice the @:admin@ label in the policies list for the @:publisher@ group.  This will copy the policies from the _:admin_ label
+that you setup before.  You can build a complex policy groups in this way.
+
+<pre><code>
+  do_something_big if operator.authorized?(:admin)
+  show_publish_button if operator.authorized?(:publisher)
+</code></pre>
+
+There's singular and plural versions of both _for_labels_ and _use_policies_
+
+h3. Setting Instance Policies
+
+When you want to set instance policies, you do it just the same as when you're setting up global policies.
+
+<pre><code>
+  class Article
+    include DataMapper::Resource
+    
+    authorization do
+      for_labels(:create          ).use_policy("Public")
+      for_labels(:update, :edit   ).use_policy("Owner", :publisher, :admin)
+      for_labels(:read,   :view   ).use_policy("Published", :update)
+      for_labels(:delete, :destroy).use_policies("Owner", :admin)
+    end
+    
+    # snip
+  end
+</code></pre>
+
+From this example all crud actions are setup on Article ready to be protected.  The labels can be anything you like, and as is 
+shown in the above example, you can copy from the global policy groups.
+
+With the above definition you could do:
+<pre><code>
+  @user.authorized?(:read,   :target => @article)
+  @user.authorized?(:update, :target => @article)
+  @user.authroized?(:create, :target => Article)
+</code></pre>
+
+These will use the policy groups you've setup on Article.  Note that if you pass a class as @:target@ that will 
+use the policy group labels found on the class, and execute the check as a general policy, not an instance one.  
+
+h3. Copying Policy Groups Across Classes
+
+Sometimes you may have policy groups that are very similar or even the same that you want to re-use elsewhere.  One option is 
+to put a group in the global space and then you can use those labels in your class authorization definition.  You can
+also copy directly from another class.
+
+<pre><code>
+  class News
+    authorization do
+      with_scope(Article) do
+        for_label( :create       ).use_policy(:create)
+        for_labels(:read, :view  ).use_policy(:read)
+        for_labels(:update       ).use_policy(:update, "OwningDepartment")
+        for_labels(:delete       ).use_policy(:delete, "OwningDepartmentHead")
+      end
+    end
+  end
+</code></pre>
+
+This will copy the policies from the ones on Article and add any you've added.  
+
+h3. Inheriting Policies
+
+Policies are inheritable.  In the child, you can add to, replace or clear the policies inherited from the parent.  For example:
+
+<pre><code>
+  class Tutorial < Article
+    authorization do
+      for_label(:edit, :update).add_policies("OwningDepartment")
+      for_label(:create).clear!
+      for_label(:delete).use_policies(:admin, "Owner")
+    end
+  end
+</code></pre>
+
+In this example, the _add_policies_ will add the new policies to the inherited ones.  _clear!_ will remove the policy group
+for that label, and _use_policies_ will overwrite the inherited policy group.
+
+h2. Authorizing Controllers
+
+All this is well and good but a lot of the time in merb is spent inside the controller.  Controllers need to be easy to 
+authorize.  Here's an example of authorization of the "Articles" controller:
+<pre><code>
+  
+  class Articles < Application
+  
+    authorization(Article) do
+      for_action(:index   ).use_label(:read)
+      for_actions(:create ).use_label(:create)
+      
+      with_target(:find_member) do
+        for_action(:show              ).use_label(:read)
+        for_actions(:edit, :update    ).use_label(:update)
+        for_actions(:delete, :destroy ).use_label(:delete)
+      end
+    end
+    
+    private
+    def find_member
+      @article = Article.get(params[:id])
+      raise NotFound unless @article
+      @article
+    end
+  end
+  
+</pre></code>
+
+This could be a typical setup for a CRUD controller that you setup manually.  The @authorization@ method on the controller receives an optional parameter
+which is used as a default target.  Passing it a class will effectively scope the controller to a particular class.
+
+In the above example you can see each method being protected with a label.  The labels can be for the Global policies or 
+for the scoping class passed to @authorization@.
+
+The authorization will be checked before the action is called.  If there is no user logged in, @ensure_authenticated@ will
+be called to try a login.  If there is no login it will raise an Unauthenticated action as per Authentication.
+
+If the authorization fails, an _Unauthorized_ exception will be raised.
+
+h3. with_target
+
+The _with_target_ helper in the above example scopes each of the actions in the block to use a target object.  Pass in a symbol
+to have it call a method on the controller (as above) or pass it a proc.
+
+This will call the method / proc and use the result as the target object.  For example, in the above example for the show action
+it will end up as:
+<pre><code>
+  session.user.authorized?(:read, :target => @article)
+</code></pre>
+
+For the index and create actions however, which aren't in the _with_target_ block, the target will be the scoped class passed to the _authorization_ method.  It will boil down to:
+<pre><code>
+  session.user.authorized?(:read, :target => Article)
+</code></pre>
+
+h3. Protecting CRUD Resources
+
+There is a special helper for protecting CRUD resources.  Lets just see it
+
+<pre><code>
+  class MyCrudController < Application
+    authorize_crud_resource Article
+    
+    # snip
+    private 
+    def find_member
+      Article.get(params[:id])
+    end
+  end
+</code></pre>
+
+This will protect all normal crud methods on MyCrudController with the Article model.  That is: create, new, index, show, edit,
+update, delete, and destroy.  To have this work, you need to setup the _:create_, _:read_, _:update_, and _:delete_ labels on
+the Article model.  
+
+create, new, and index are evaluated in the general sense, and the rest are evaluated with a target instance.  
+
+You can also add custom actions.
+ 
+<pre><code>
+  class MyCrudController < Application
+    authorize_crud_resource Article do
+      for_action(:custom).use_label(:admin)
+    end
+    
+    def custom
+      # stuff
+    end
+    
+    # snip
+  end
+</code></pre>
+
+
+h2. Defining Policies
+
+Throughout the README I've just been using policies like they're there.  Lets take a look at what a policy actually is though.
+
+A Policy is a class.  It can be executed in two contexts.  
+
+# general - The general sense of a policy is a bare question of the operator.  Like, are you an admin, are you a publisher etc.  
+# instance - The instance sense of a policy is focused on a particular object and how the operator relates to it.  You can ask questions like, "are you the owner of foo?"  
+
+At it's heart, the sense of the policy is governed by the :target option in the _authorized?_ method.  When you ask @user.authorized?(:read, :target => @article)@ the policy will be executed in the instance sense.  When you don't pass 
+@:target@ or you pass @:target@ a class, it will be executed in the general sense.  
+
+h3. Rules for Policies
+
+A policiy is a class.  Policies inherit from Merb::Authorization::Policies::Policy and should be declared in the Merb::Authorization::Policies namespace.  
+
+A policy can implement two methods.  @general_policy@ and @instance_policy@.  These are the methods that are called
+on the policy when appropriate.  To pass a policy, return true from these methods, to fail, return false.  When you fail, any other policies that are in the group are tried until one passes or all fail.  By default, if you don't implement the method (because it's meaningless in the context of that policy) it will return false for you. Lets take a look at a couple.
+
+<pre><code>
+  
+  module Merb::Authorization::Policies
+    class Admin < Policy
+      def general_policy(operator, options)
+        operator.admin?
+      end
+      
+      def instance_policy(operator, instance, options)
+        general_policy(operator, options)
+      end
+    end
+    
+    class Owner < Policy
+      def instance_policy(operator, instance, options)
+        instance.respond_to?(:owner) && instance.owner == operator
+      end
+    end
+    
+    class Publisher < Policy
+      def general_policy(operator, options)
+        operator.publisher?
+      end
+      
+      def instance_policy(operator, instance, options)
+        operator.publisher? && instance.draft?
+      end
+    end
+  end
+  
+</code></pre>
+
+Here's just a few policies that could be declared.  You can see that some of them have both methods, and the Owner doesn't.  That's because Owner doesn't make sense in a general context, only in an instance context.  You can call the other methods inside them,
+and also, there's nothing stopping you from checking other policies inside this one.  You could easily call @operator.authorized?(:foo)@ inside the policy.
+
+h3. Using Options in Policies
+
+You can see from the above example that there are options passed to each policy.  This allows your policy to behave slightly differently based on the options passed in.  For example, say you wanted to scope a policy to a particular department.  You could use
+@user.authorized?(:edit, :target => @article, :department => @department)@.  The @department variable will be made available in <code>options[:department]</code> and you could use it to make the policy decisions.
+
+*Note: It is a really bad idea to use anything related to the request object in the policy options hash.  If you do, your policy will not work correctly in mailers, models, runners etc where there is no notion of a request.  Policies should be stateless*
+
+h3. Using Options in the Controller
+
+Sometimes you may need / want to use options when protecting your controller.  Here's an example of doing just that.
+
+<pre><code>
+  
+  class Contacts < Application
+    authorization(Contact) do
+      with_options(:department_options) do
+        for_action(:index).use_label(:read)
+        
+        with_target(:find_member) do
+          for_action( :show               ).use_label(:read)
+          for_actions(:edit,    :update   ).use_label(:update)
+          for_actions(:delete,  :destroy  ).use_label(:delete)
+        end
+      end
+    end
+    
+    # snip
+    
+    private 
+    def department_options
+      {:department => Department.get(params[:department_id])}
+    end
+    
+    def find_member
+      @contact = Contact.get(params[:id])
+    end
+  end
+  
+</code></pre>
+
+The _with_options_ helper will provide the options found in the _department_options_ method during the request and
+pass this to each policy to make use of.  
+
+
+
+
+
