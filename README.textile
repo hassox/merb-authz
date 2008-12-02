@@ -1,6 +1,6 @@
-h1. MerbAuth - Authorization
+h1. MerbAuthz - Authorization
 
-Authorization in MerbAuth is a high level api for authorization in Merb applications.  It 
+Authorization in MerbAuthz is a high level api for authorization in Merb applications.  It 
 does not implement any particular authorization scheme, but rather provides a mechanism
 for you to specify your own authorization logic and apply it in a very granular fashion.
 
