@@ -1,6 +1,0 @@
-merb-authz
-==========
-
-A plugin that provides authorization for the merb-auth plugin (Merb)
-
-This is a temporary plugin only, with the aim being merging with merb-auth in the near future.
