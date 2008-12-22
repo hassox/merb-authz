@@ -1,3 +1,5 @@
+h1. Experimental.. Don't use I'll be tearing this one up because it sucks
+
 h1. MerbAuthz - Authorization
 
 Authorization in MerbAuthz is a high level api for authorization in Merb applications.  It 
@@ -252,7 +254,7 @@ There is a special helper for protecting CRUD resources.  Lets just see it
 </code></pre>
 
 This will protect all normal crud methods on MyCrudController with the Article model.  That is: create, new, index, show, edit,
-update, delete, and destroy.  To have this work, you need to setup the _:create_, _:read_, _:update_, and _:delete_ labels on
+update, delete, and destroy.  To have this work, you need to setup the @:create@, @:read@, @:update@, and @:delete@ labels on
 the Article model.  
 
 create, new, and index are evaluated in the general sense, and the rest are evaluated with a target instance.  
